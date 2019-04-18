@@ -1753,41 +1753,28 @@ export class CommandCenter {
 			}
 		}
 
-		if (pushOptions.pushType === PushType.PushTags) {
-			await repository.pushTags(undefined, forcePushMode);
-
-			window.showInformationMessage(localize('push with tags success', "Successfully pushed with tags."));
-			return;
-		}
-
-		if (!repository.HEAD || !repository.HEAD.name) {
+		if (!repository.HEAD || !repository.HEAD.name || !repository.HEAD.upstream) {
 			if (!pushOptions.silent) {
 				window.showWarningMessage(localize('nobranch', "Please check out a branch to push to a remote."));
 			}
 			return;
 		}
 
-		if (pushOptions.pushType === PushType.Push) {
-			try {
-				await repository.push(repository.HEAD, forcePushMode);
-			} catch (err) {
-				if (err.gitErrorCode !== GitErrorCodes.NoUpstreamBranch) {
-					throw err;
-				}
+		let setUpstream = pushOptions.pushType === PushType.PushTo;
+		let tags = pushOptions.pushType === PushType.PushTags;
 
-				if (pushOptions.silent) {
-					return;
-				}
+		let remote: string | undefined;
+		let branch: string | undefined;
 
-				const branchName = repository.HEAD.name;
-				const message = localize('confirm publish branch', "The branch '{0}' has no upstream branch. Would you like to publish this branch?", branchName);
-				const yes = localize('ok', "OK");
-				const pick = await window.showWarningMessage(message, { modal: true }, yes);
+		branch = `${repository.HEAD.name}:${repository.HEAD.upstream.name}`;
 
-				if (pick === yes) {
-					await this.publish(repository);
-				}
-			}
+		if (pushOptions.pushType === PushType.PushTags) {
+			window.showInformationMessage(localize('push with tags success', "Successfully pushed with tags."));
+			return;
+
+		} else if (pushOptions.pushType === PushType.Push) {
+			remote = repository.HEAD.upstream.remote;
+
 		} else {
 			const branchName = repository.HEAD.name;
 			const picks = remotes.filter(r => r.pushUrl !== undefined).map(r => ({ label: r.name, description: r.pushUrl! }));
@@ -1798,7 +1785,28 @@ export class CommandCenter {
 				return;
 			}
 
-			await repository.pushTo(pick.label, branchName, undefined, forcePushMode);
+			remote = pick.label;
+		}
+
+		try {
+			await repository.push(remote, branch, setUpstream, tags, forcePushMode);
+		} catch (err) {
+			if (err.gitErrorCode !== GitErrorCodes.NoUpstreamBranch) {
+				throw err;
+			}
+
+			if (pushOptions.silent) {
+				return;
+			}
+
+			const branchName = repository.HEAD.name;
+			const message = localize('confirm publish branch', "The branch '{0}' has no upstream branch. Would you like to publish this branch?", branchName);
+			const yes = localize('ok', "OK");
+			const pick = await window.showWarningMessage(message, { modal: true }, yes);
+
+			if (pick === yes) {
+				await this.publish(repository);
+			}
 		}
 	}
 
